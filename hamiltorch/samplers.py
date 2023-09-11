@@ -1,8 +1,9 @@
-import torch
-import torch.nn as nn
 from enum import Enum
 
+import torch
+import torch.nn as nn
 from numpy import pi
+
 from . import util
 
 # Docstring:
@@ -106,7 +107,7 @@ def fisher(params, log_prob_func=None, jitter=None, normalizing_const=1., softab
         fish = torch.matmul(jac.view(-1,1),jac.view(1,-1)).diag().diag()#/ normalizing_const #.diag().diag() / normalizing_const
     else:
         hess = torch.autograd.functional.hessian(log_prob_func, params, create_graph=True)
-        fish = - hess #/ normalizing_const
+        fish = -hess # / normalizing_const
     if util.has_nan_or_inf(fish):
         print('Invalid hessian: {}, params: {}'.format(fish, params))
         raise util.LogProbError()
@@ -181,9 +182,16 @@ def gibbs(params, sampler=Sampler.HMC, log_prob_func=None, jitter=None, normaliz
     """
 
     if sampler == Sampler.RMHMC:
-        dist = torch.distributions.MultivariateNormal(torch.zeros_like(params), fisher(params, log_prob_func, jitter, normalizing_const, softabs_const, metric)[0])
+        dist = torch.distributions.MultivariateNormal(torch.zeros_like(params), 
+                                                      fisher(params,
+                                                             log_prob_func, 
+                                                             jitter, 
+                                                             normalizing_const, 
+                                                             softabs_const, 
+                                                             metric)[0])
     elif mass is None:
-        dist = torch.distributions.Normal(torch.zeros_like(params), torch.ones_like(params))
+        dist = torch.distributions.Normal(torch.zeros_like(params),
+                                          torch.ones_like(params))
     else:
         if type(mass) is list:
             # block wise mass list of blocks
@@ -191,18 +199,41 @@ def gibbs(params, sampler=Sampler.HMC, log_prob_func=None, jitter=None, normaliz
             i = 0
             for block in mass:
                 it = block[0].shape[0]
-                dist = torch.distributions.MultivariateNormal(torch.zeros_like(block[0]), block)
-                samples[i:it+i] = dist.sample()
+                dist = torch.distributions.MultivariateNormal(
+                    torch.zeros_like(block[0]), block)
+                samples[i: it+i] = dist.sample()
                 i += it
             return samples
         elif len(mass.shape) == 2:
-            dist = torch.distributions.MultivariateNormal(torch.zeros_like(params), mass)
+            dist = torch.distributions.MultivariateNormal(
+                torch.zeros_like(params), mass)
         elif len(mass.shape) == 1:
-            dist = torch.distributions.Normal(torch.zeros_like(params), mass ** 0.5) # Normal expects standard deviation so need sqrt
+            dist = torch.distributions.Normal(
+                torch.zeros_like(params), mass ** 0.5) 
+            # Normal expects standard deviation so need sqrt
     return dist.sample()
 
 
-def leapfrog(params, momentum, log_prob_func, steps=10, step_size=0.1, jitter=0.01, normalizing_const=1., softabs_const=1e6, explicit_binding_const=100, fixed_point_threshold=1e-20, fixed_point_max_iterations=6, jitter_max_tries=10, inv_mass=None, ham_func=None, sampler=Sampler.HMC, integrator=Integrator.IMPLICIT, metric=Metric.HESSIAN, store_on_GPU = True, debug=False, pass_grad = None):
+def leapfrog(params, 
+             momentum, 
+             log_prob_func,
+             steps=10, 
+             step_size=0.1,
+             jitter=0.01,
+             normalizing_const=1.,
+             softabs_const=1e6,
+             explicit_binding_const=100,
+             fixed_point_threshold=1e-20,
+             fixed_point_max_iterations=6,
+             jitter_max_tries=10,
+             inv_mass=None,
+             ham_func=None,
+             sampler=Sampler.HMC,
+             integrator=Integrator.IMPLICIT,
+             metric=Metric.HESSIAN,
+             store_on_GPU=True,
+             debug=False, 
+             pass_grad=None):
     """This is a rather large function that contains all the various integration schemes used for HMC. Broadly speaking, it takes in the parameters
     and momentum and propose a new set of parameters and momentum. This is a key part of hamiltorch as it covers multiple integration schemes.
 
@@ -264,7 +295,8 @@ def leapfrog(params, momentum, log_prob_func, steps=10, step_size=0.1, jitter=0.
 
     """
 
-    params = params.clone(); momentum = momentum.clone()
+    params = params.clone()
+    momentum = momentum.clone()
     # TodO detach graph when storing ret_params for memory saving
     if sampler == Sampler.HMC and integrator != Integrator.SPLITTING and integrator != Integrator.SPLITTING_RAND and integrator != Integrator.SPLITTING_KMID:
         def params_grad(p):
@@ -279,11 +311,13 @@ def leapfrog(params, momentum, log_prob_func, steps=10, step_size=0.1, jitter=0.
         ret_params = []
         ret_momenta = []
         momentum += 0.5 * step_size * params_grad(params)
+        # begin the leapfrog process
         for n in range(steps):
             if inv_mass is None:
-                params = params + step_size * momentum #/normalizing_const
+                # /normalizing_const
+                params = params + step_size * momentum
             else:
-                #Assum G is diag here so 1/Mass = G inverse
+                # Assum G is diag here so 1/Mass = G inverse
                 if type(inv_mass) is list:
                     i = 0
                     for block in inv_mass:
@@ -300,7 +334,7 @@ def leapfrog(params, momentum, log_prob_func, steps=10, step_size=0.1, jitter=0.
             ret_momenta.append(momentum.clone())
         # only need last for Hamiltoninian check (see p.14) https://arxiv.org/pdf/1206.1901.pdf
         ret_momenta[-1] = ret_momenta[-1] - 0.5 * step_size * p_grad.clone()
-            # import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         return ret_params, ret_momenta
     elif sampler == Sampler.RMHMC and (integrator == Integrator.IMPLICIT or integrator == Integrator.S3):
         if integrator is not Integrator.S3:
@@ -607,6 +641,7 @@ def leapfrog(params, momentum, log_prob_func, steps=10, step_size=0.1, jitter=0.
 
 
 def acceptance(h_old, h_new):
+    
     """Returns the log acceptance ratio for the Metroplis-Hastings step.
 
     Parameters
@@ -847,7 +882,28 @@ def hamiltonian(params, momentum, log_prob_func, jitter=0.01, normalizing_const=
 
 
 
-def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, step_size=0.1, burn=0, jitter=None, inv_mass=None, normalizing_const=1., softabs_const=None, explicit_binding_const=100, fixed_point_threshold=1e-5, fixed_point_max_iterations=1000, jitter_max_tries=10, sampler=Sampler.HMC, integrator=Integrator.IMPLICIT, metric=Metric.HESSIAN, debug=False, desired_accept_rate=0.8, store_on_GPU = True, pass_grad = None, verbose = False):
+def sample(log_prob_func,
+           params_init,
+           num_samples=10,
+           num_steps_per_sample=10,
+           step_size=0.1,
+           burn=0,
+           jitter=None,
+           inv_mass=None,
+           normalizing_const=1.,
+           softabs_const=None,
+           explicit_binding_const=100,
+           fixed_point_threshold=1e-5,
+           fixed_point_max_iterations=1000,
+           jitter_max_tries=10,
+           sampler=Sampler.HMC,
+           integrator=Integrator.IMPLICIT,
+           metric=Metric.HESSIAN,
+           debug=False,
+           desired_accept_rate=0.8,
+           store_on_GPU=True,
+           pass_grad=None,
+           verbose=False):
     """ This is the main sampling function of hamiltorch. Most samplers are built on top of this class. This function receives a function handle log_prob_func,
      which the sampler will use to evaluate the log probability of each sample. A log_prob_func must take a 1-d vector of length equal to the number of parameters that are being
      sampled.
@@ -923,9 +979,11 @@ def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, 
     device = params_init.device
 
     if params_init.dim() != 1:
+        # flatten parameter of different layers into one vector
         raise RuntimeError('params_init must be a 1d tensor.')
 
     if burn >= num_samples:
+        # burn must be less than num_samples
         raise RuntimeError('burn must be less than num_samples.')
 
     NUTS = False
@@ -961,21 +1019,58 @@ def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, 
     num_rejected = 0
     # if sampler == Sampler.HMC:
     if not verbose:
-        util.progress_bar_init('Sampling ({}; {})'.format(sampler, integrator), num_samples, 'Samples')
+        util.progress_bar_init('Sampling ({}; {})'.format(sampler, integrator),
+                               num_samples, 'Samples')
     for n in range(num_samples):
         if not verbose:
             util.progress_bar_update(n)
         try:
-            momentum = gibbs(params, sampler=sampler, log_prob_func=log_prob_func, jitter=jitter, normalizing_const=normalizing_const, softabs_const=softabs_const, metric=metric, mass=mass)
+            # get the updated momentum
+            momentum = gibbs(params,
+                             sampler=sampler,
+                             log_prob_func=log_prob_func,
+                             jitter=jitter,
+                             normalizing_const=normalizing_const,
+                             softabs_const=softabs_const,
+                             metric=metric,
+                             mass=mass)
 
-            ham = hamiltonian(params, momentum, log_prob_func, jitter=jitter, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, normalizing_const=normalizing_const, sampler=sampler, integrator=integrator, metric=metric, inv_mass=inv_mass)
+            ham = hamiltonian(params,
+                              momentum, 
+                              log_prob_func,
+                              jitter=jitter,
+                              softabs_const=softabs_const,
+                              explicit_binding_const=explicit_binding_const,
+                              normalizing_const=normalizing_const,
+                              sampler=sampler,
+                              integrator=integrator,
+                              metric=metric,
+                              inv_mass=inv_mass)
 
-            leapfrog_params, leapfrog_momenta = leapfrog(params, momentum, log_prob_func, sampler=sampler, integrator=integrator, steps=num_steps_per_sample, step_size=step_size, inv_mass=inv_mass, jitter=jitter, jitter_max_tries=jitter_max_tries, fixed_point_threshold=fixed_point_threshold, fixed_point_max_iterations=fixed_point_max_iterations, normalizing_const=normalizing_const, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, metric=metric, store_on_GPU = store_on_GPU, debug=debug, pass_grad = pass_grad)
+            leapfrog_params, leapfrog_momenta = leapfrog(params,
+                                                         momentum, 
+                                                         log_prob_func, 
+                                                         sampler=sampler, 
+                                                         integrator=integrator, 
+                                                         steps=num_steps_per_sample, 
+                                                         step_size=step_size, 
+                                                         inv_mass=inv_mass, 
+                                                         jitter=jitter, 
+                                                         jitter_max_tries=jitter_max_tries, 
+                                                         fixed_point_threshold=fixed_point_threshold, 
+                                                         fixed_point_max_iterations=fixed_point_max_iterations, 
+                                                         normalizing_const=normalizing_const, 
+                                                         softabs_const=softabs_const, 
+                                                         explicit_binding_const=explicit_binding_const, 
+                                                         metric=metric, store_on_GPU = store_on_GPU, 
+                                                         debug=debug, 
+                                                         pass_grad = pass_grad)
+            
             if sampler == Sampler.RMHMC and integrator == Integrator.EXPLICIT:
 
                 # Step required to remove bias by comparing to Hamiltonian that is not augmented:
-                ham = ham/2 # Original RMHMC
-
+                # Original RMHMC
+                ham = ham / 2
                 params = leapfrog_params[0][-1].detach().requires_grad_()
                 params_copy = leapfrog_params[-1].detach().requires_grad_()
                 params_copy = params_copy.detach().requires_grad_()
@@ -986,17 +1081,31 @@ def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, 
                 leapfrog_momenta = leapfrog_momenta[0]
 
                 # This is trying the new (unbiased) version:
-                new_ham = rm_hamiltonian(params, momentum, log_prob_func, jitter, normalizing_const, softabs_const=softabs_const, sampler=sampler, integrator=integrator, metric=metric) # In rm sampler so no need for inv_mass
-                # new_ham = hamiltonian([params,params_copy] , [momentum,momentum_copy], log_prob_func, jitter=jitter, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, normalizing_const=normalizing_const, sampler=sampler, integrator=integrator, metric=metric)
-
+                # In rm sampler so no need for inv_mass
+                new_ham = rm_hamiltonian(params, 
+                                         momentum, 
+                                         log_prob_func, 
+                                         jitter, 
+                                         normalizing_const, 
+                                         softabs_const=softabs_const, 
+                                         sampler=sampler, 
+                                         integrator=integrator, 
+                                         metric=metric)
             else:
                 params = leapfrog_params[-1].to(device).detach().requires_grad_()
                 momentum = leapfrog_momenta[-1].to(device)
-                new_ham = hamiltonian(params, momentum, log_prob_func, jitter=jitter, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, normalizing_const=normalizing_const, sampler=sampler, integrator=integrator, metric=metric, inv_mass=inv_mass)
-
-
-
-            # new_ham = hamiltonian(params, momentum, log_prob_func, jitter=jitter, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, normalizing_const=normalizing_const, sampler=sampler, integrator=integrator, metric=metric)
+                new_ham = hamiltonian(params,
+                                      momentum,
+                                      log_prob_func,
+                                      jitter=jitter,
+                                      softabs_const=softabs_const,
+                                      explicit_binding_const=explicit_binding_const,
+                                      normalizing_const=normalizing_const,
+                                      sampler=sampler,
+                                      integrator=integrator,
+                                      metric=metric,
+                                      inv_mass=inv_mass)
+            # get the acdeptance ratio
             rho = min(0., acceptance(ham, new_ham))
             if debug == 1:
                 print('Step: {}, Current Hamiltoninian: {}, Proposed Hamiltoninian: {}'.format(n,ham,new_ham))
@@ -1090,7 +1199,18 @@ def sample(log_prob_func, params_init, num_samples=10, num_steps_per_sample=10, 
     else:
         return list(map(lambda t: t.detach(), ret_params))
 
-def define_model_log_prob(model, model_loss, x, y, params_flattened_list, params_shape_list, tau_list, tau_out, normalizing_const=1., predict=False, prior_scale = 1.0, device = 'cpu'):
+def define_model_log_prob(model, 
+                          model_loss, 
+                          x, 
+                          y, 
+                          params_flattened_list, 
+                          params_shape_list, 
+                          tau_list, 
+                          tau_out,
+                          normalizing_const=1., 
+                          predict=False, 
+                          prior_scale=1.0, 
+                          device='cpu'):
     """This function defines the `log_prob_func` for torch nn.Modules. This will then be passed into the hamiltorch sampler. This is an important
     function for any work with Bayesian neural networks.
 
@@ -1149,36 +1269,40 @@ def define_model_log_prob(model, model_loss, x, y, params_flattened_list, params
         params_unflattened = util.unflatten(model, params)
 
         i_prev = 0
-        l_prior = torch.zeros_like( params[0], requires_grad=True) # Set l2_reg to be on the same device as params
-        for weights, index, shape, dist in zip(model.parameters(), params_flattened_list, params_shape_list, dist_list):
+        # Set l2_reg to be on the same device as params
+        l_prior = torch.zeros_like(params[0], requires_grad=True) 
+        for weights, index, shape, dist in zip(model.parameters(), 
+                                               params_flattened_list, 
+                                               params_shape_list, 
+                                               dist_list):
             # weights.data = params[i_prev:index+i_prev].reshape(shape)
-            w = params[i_prev:index+i_prev]
+            w = params[i_prev: index + i_prev]
             l_prior = dist.log_prob(w).sum() + l_prior
             i_prev += index
 
         # Sample prior if no data
         if x is None:
             # print('hi')
-            return l_prior/prior_scale
+            return l_prior / prior_scale
 
         x_device = x.to(device)
         y_device = y.to(device)
 
-
+        # get the prediction for BNN model
         output = fmodel(x_device, params=params_unflattened)
 
+        # get loss function for infernece
         if model_loss == 'binary_class_linear_output':
             crit = nn.BCEWithLogitsLoss(reduction='sum')
             ll = - tau_out *(crit(output, y_device))
         elif model_loss == 'multi_class_linear_output':
-    #         crit = nn.MSELoss(reduction='mean')
+            # crit = nn.MSELoss(reduction='mean')
             crit = nn.CrossEntropyLoss(reduction='sum')
-    #         crit = nn.BCEWithLogitsLoss(reduction='sum')
+            # crit = nn.BCEWithLogitsLoss(reduction='sum')
             ll = - tau_out *(crit(output, y_device.long().view(-1)))
             # ll = - tau_out *(torch.nn.functional.nll_loss(output, y.long().view(-1)))
         elif model_loss == 'multi_class_log_softmax_output':
             ll = - tau_out *(torch.nn.functional.nll_loss(output, y_device.long().view(-1)))
-
         elif model_loss == 'regression':
             # crit = nn.MSELoss(reduction='sum')
             ll = - 0.5 * tau_out * ((output - y_device) ** 2).sum(0)#sum(0)
@@ -1258,7 +1382,32 @@ def define_split_model_log_prob(model, model_loss, train_loader, num_splits, par
     return log_prob_list
 
 
-def sample_model(model, x, y, params_init, model_loss='multi_class_linear_output' ,num_samples=10, num_steps_per_sample=10, step_size=0.1, burn=0, inv_mass=None, jitter=None, normalizing_const=1., softabs_const=None, explicit_binding_const=100, fixed_point_threshold=1e-5, fixed_point_max_iterations=1000, jitter_max_tries=10, sampler=Sampler.HMC, integrator=Integrator.IMPLICIT, metric=Metric.HESSIAN, debug=False, tau_out=1.,tau_list=None, store_on_GPU = True, desired_accept_rate=0.8, verbose = False):
+def sample_model(model, 
+                 x, 
+                 y, 
+                 params_init, 
+                 model_loss='multi_class_linear_output',
+                 num_samples=10, 
+                 num_steps_per_sample=10, 
+                 step_size=0.1, 
+                 burn=0, 
+                 inv_mass=None, 
+                 jitter=None, 
+                 normalizing_const=1.,
+                 softabs_const=None, 
+                 explicit_binding_const=100, 
+                 fixed_point_threshold=1e-5, 
+                 fixed_point_max_iterations=1000, 
+                 jitter_max_tries=10, 
+                 sampler=Sampler.HMC, 
+                 integrator=Integrator.IMPLICIT, 
+                 metric=Metric.HESSIAN, 
+                 debug=False, 
+                 tau_out=1.,
+                 tau_list=None, 
+                 store_on_GPU = True, 
+                 desired_accept_rate=0.8, 
+                 verbose = False):
     """Sample weights from a NN model to perform inference. This function builds a log_prob_func from the torch.nn.Module and passes it to `hamiltorch.sample`.
 
     Parameters
@@ -1353,13 +1502,42 @@ def sample_model(model, x, y, params_init, model_loss='multi_class_linear_output
         params_flattened_list.append(weights.nelement())
         if build_tau:
             tau_list.append(torch.tensor(1.))
-
-    log_prob_func = define_model_log_prob(model, model_loss, x, y, params_flattened_list, params_shape_list, tau_list, tau_out, normalizing_const=normalizing_const,  device = device)
+    # define the log prob function as the sampling function
+    log_prob_func = define_model_log_prob(model,
+                                          model_loss,
+                                          x,
+                                          y, 
+                                          params_flattened_list, 
+                                          params_shape_list, 
+                                          tau_list, 
+                                          tau_out, 
+                                          normalizing_const=normalizing_const,  
+                                          device = device)
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sample(log_prob_func, params_init, num_samples=num_samples, num_steps_per_sample=num_steps_per_sample, step_size=step_size, burn=burn, jitter=jitter, inv_mass=inv_mass, normalizing_const=normalizing_const, softabs_const=softabs_const, explicit_binding_const=explicit_binding_const, fixed_point_threshold=fixed_point_threshold, fixed_point_max_iterations=fixed_point_max_iterations, jitter_max_tries=jitter_max_tries, sampler=sampler, integrator=integrator, metric=metric, debug=debug, desired_accept_rate=desired_accept_rate, store_on_GPU = store_on_GPU, verbose = verbose)
+    return sample(log_prob_func, 
+                  params_init, 
+                  num_samples=num_samples, 
+                  num_steps_per_sample=num_steps_per_sample, 
+                  step_size=step_size, 
+                  burn=burn, 
+                  jitter=jitter, 
+                  inv_mass=inv_mass, 
+                  normalizing_const=normalizing_const, 
+                  softabs_const=softabs_const, 
+                  explicit_binding_const=explicit_binding_const, 
+                  fixed_point_threshold=fixed_point_threshold, 
+                  fixed_point_max_iterations=fixed_point_max_iterations, 
+                  jitter_max_tries=jitter_max_tries, 
+                  sampler=sampler, 
+                  integrator=integrator, 
+                  metric=metric, 
+                  debug=debug, 
+                  desired_accept_rate=desired_accept_rate, 
+                  store_on_GPU = store_on_GPU, 
+                  verbose = verbose)
 
 def sample_split_model(model, train_loader, params_init, num_splits, model_loss='multi_class_linear_output', num_samples=10, num_steps_per_sample=10, step_size=0.1, burn=0, inv_mass=None, jitter=None, normalizing_const=1., softabs_const=None, explicit_binding_const=100, fixed_point_threshold=1e-5, fixed_point_max_iterations=1000, jitter_max_tries=10, sampler=Sampler.HMC, integrator=Integrator.SPLITTING, metric=Metric.HESSIAN, debug=False, tau_out=1.,tau_list=None, store_on_GPU = True, desired_accept_rate=0.8, verbose = False):
     """Sample weights from a NN model to perform inference.
