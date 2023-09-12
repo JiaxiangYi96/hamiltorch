@@ -1,14 +1,17 @@
-import torch
-import numpy as np
-import time
-from termcolor import colored
+import concurrent.futures
 import inspect
 import random
 import sys
-import concurrent.futures
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+from termcolor import colored
 
 
 def set_random_seed(seed=None):
+    
     if seed is None:
         seed = int((time.time()*1e6) % 1e8)
     global _random_seed
@@ -56,7 +59,6 @@ def progress_bar_init(message, num_iters, iter_name='Items', rejections=False):
         print('Time spent  | Time remain.| Progress             | {} | {}/sec | Rejected Samples'.format(iter_name.ljust(progress_bar_len_str_num_iters * 2 + 1), iter_name))
 
 
-
 def progress_bar_update(iter,rejections=None):
     global progress_bar_prev_duration
     duration = time.time() - progress_bar_time_start
@@ -90,6 +92,7 @@ def days_hours_mins_secs_str(total_seconds):
 
 
 def has_nan_or_inf(value):
+
     if torch.is_tensor(value):
         value = torch.sum(value)
         isnan = int(torch.isnan(value)) > 0
@@ -118,11 +121,25 @@ class LogProbError(Exception):
 #     return torch.cat(lst) if lst else torch.tensor([])
 
 
-def flatten(model):
+def flatten(model: nn.Module):
+    """flatten the parameters of a model
+
+    Parameters
+    ----------
+    model : nn.Module
+        neural network model
+
+    Returns
+    -------
+    functional_model : nn.Module
+        Functional neural network architecture
+    """
     return torch.cat([p.flatten() for p in model.parameters()])
 
 
 def unflatten(model, flattened_params):
+    """unflatten the parameters of a model"""
+
     if flattened_params.dim() != 1:
         raise ValueError('Expecting a 1d flattened_params')
     params_list = []
@@ -320,6 +337,8 @@ def _make_functional(module, params_box, params_offset):
         child_params_offset, fchild = _make_functional(child, params_box, child_params_offset)
         self._modules[name] = fchild  # fchild is functional child
         setattr(self, name, fchild)
+
+
     def fmodule(*args, **kwargs):
 
         # Uncomment below if statement to step through (with 'n') assignment of parameters.
@@ -348,7 +367,20 @@ def _make_functional(module, params_box, params_offset):
     return child_params_offset, fmodule
 
 
-def make_functional(module):
+def make_functional(module: nn.Module):
+    """Converts a module into a functional module.
+    call as a function to run the forward pass.
+
+    Parameters
+    ----------
+    module : nn.Module
+        Neural network architecture
+
+    Returns
+    -------
+    functional_module : nn.Module
+        Functional neural network architecture
+    """
     params_box = [None]
     _, fmodule_internal = _make_functional(module, params_box, 0)
 
@@ -359,7 +391,6 @@ def make_functional(module):
     return fmodule
 
 ##### PATCH FOR nn.Sequential #####
-
 def Sequential_forward_patch(self, input):
     # put at top of notebook nn.Sequential.forward = Sequential_forward_patch
     for label, module in self._modules.items():
@@ -401,5 +432,5 @@ def multi_chain(chain, num_workers, seeds, parallel = False):
         results = []
         for s in seeds:
             results.append(chain(s))
-
+            
     return results

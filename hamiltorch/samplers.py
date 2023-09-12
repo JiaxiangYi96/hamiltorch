@@ -31,7 +31,9 @@ class Metric(Enum):
     SOFTABS = 2
     JACOBIAN_DIAG = 3
 
-def collect_gradients(log_prob, params, pass_grad = None):
+def collect_gradients(log_prob,
+                      params,
+                      pass_grad=None):
     """Returns the parameters and the corresponding gradients (params.grad).
 
     Parameters
@@ -63,11 +65,16 @@ def collect_gradients(log_prob, params, pass_grad = None):
         else:
             params.grad = pass_grad
     else:
-        params.grad = torch.autograd.grad(log_prob,params)[0]
+        params.grad = torch.autograd.grad(log_prob, params)[0]
     return params
 
 
-def fisher(params, log_prob_func=None, jitter=None, normalizing_const=1., softabs_const=1e6, metric=Metric.HESSIAN):
+def fisher(params,
+           log_prob_func=None,
+           jitter=None,
+           normalizing_const=1.,
+           softabs_const=1e6,
+           metric=Metric.HESSIAN):
     """Called upon when using RMHMC. Returns the Fisher Information Matrix or Metric (often referred to as G).
 
     Parameters
@@ -104,10 +111,12 @@ def fisher(params, log_prob_func=None, jitter=None, normalizing_const=1., softab
         jac = util.jacobian(log_prob, params, create_graph=True, return_inputs=False)
         jac = torch.cat([j.flatten() for j in jac])
         # util.flatten(jac).view(1,-1)
-        fish = torch.matmul(jac.view(-1,1),jac.view(1,-1)).diag().diag()#/ normalizing_const #.diag().diag() / normalizing_const
+        # normalizing_const #.diag().diag() / normalizing_const
+        fish = torch.matmul(jac.view(-1,1),jac.view(1,-1)).diag().diag()
     else:
         hess = torch.autograd.functional.hessian(log_prob_func, params, create_graph=True)
-        fish = -hess # / normalizing_const
+        # / normalizing_const
+        fish = -hess
     if util.has_nan_or_inf(fish):
         print('Invalid hessian: {}, params: {}'.format(fish, params))
         raise util.LogProbError()
@@ -150,7 +159,14 @@ def cholesky_inverse(fish, momentum):
     return fish_inv_p
 
 
-def gibbs(params, sampler=Sampler.HMC, log_prob_func=None, jitter=None, normalizing_const=1., softabs_const=None, mass=None, metric=Metric.HESSIAN):
+def gibbs(params,
+          sampler=Sampler.HMC,
+          log_prob_func=None,
+          jitter=None,
+          normalizing_const=1.,
+          softabs_const=None, 
+          mass=None, 
+          metric=Metric.HESSIAN):
     """Performs the momentum resampling component of HMC.
 
     Parameters
@@ -201,7 +217,7 @@ def gibbs(params, sampler=Sampler.HMC, log_prob_func=None, jitter=None, normaliz
                 it = block[0].shape[0]
                 dist = torch.distributions.MultivariateNormal(
                     torch.zeros_like(block[0]), block)
-                samples[i: it+i] = dist.sample()
+                samples[i: it + i] = dist.sample()
                 i += it
             return samples
         elif len(mass.shape) == 2:
@@ -214,10 +230,10 @@ def gibbs(params, sampler=Sampler.HMC, log_prob_func=None, jitter=None, normaliz
     return dist.sample()
 
 
-def leapfrog(params, 
-             momentum, 
+def leapfrog(params,
+             momentum,
              log_prob_func,
-             steps=10, 
+             steps=10,
              step_size=0.1,
              jitter=0.01,
              normalizing_const=1.,
@@ -232,7 +248,7 @@ def leapfrog(params,
              integrator=Integrator.IMPLICIT,
              metric=Metric.HESSIAN,
              store_on_GPU=True,
-             debug=False, 
+             debug=False,
              pass_grad=None):
     """This is a rather large function that contains all the various integration schemes used for HMC. Broadly speaking, it takes in the parameters
     and momentum and propose a new set of parameters and momentum. This is a key part of hamiltorch as it covers multiple integration schemes.
@@ -378,13 +394,13 @@ def leapfrog(params,
             params_old = params.clone()
             momentum = momentum.detach().requires_grad_()
             ham = hamiltonian(params, momentum, log_prob_func, jitter=jitter, softabs_const=softabs_const, normalizing_const=normalizing_const, ham_func=ham_func, sampler=sampler, integrator=integrator, metric=metric)
-            momentum = collect_gradients(ham,momentum)
+            momentum = collect_gradients(ham, momentum)
             momentum_grad_old = momentum.grad.clone()
             for i in range(fixed_point_max_iterations):
                 params_prev = params.clone()
                 momentum = momentum.detach().requires_grad_()
                 ham = hamiltonian(params, momentum, log_prob_func, jitter=jitter, softabs_const=softabs_const, normalizing_const=normalizing_const, ham_func=ham_func, sampler=sampler, integrator=integrator, metric=metric)
-                momentum = collect_gradients(ham,momentum)#collect_gradients(ham, params)
+                momentum = collect_gradients(ham, momentum)#collect_gradients(ham, params)
                 params = params_old + 0.5 * step_size * momentum.grad + 0.5 * step_size * momentum_grad_old
                 params_diff = torch.max((params_prev-params)**2)
                 if params_diff < fixed_point_threshold:
@@ -540,7 +556,7 @@ def leapfrog(params,
                         del grad
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                        if m < M-1:
+                        if m < M - 1:
                             # print('q ',n)
                             if inv_mass is None:
                                 params += (step_size/K_div) * momentum #/normalizing_const
@@ -641,7 +657,7 @@ def leapfrog(params,
 
 
 def acceptance(h_old, h_new):
-    
+
     """Returns the log acceptance ratio for the Metroplis-Hastings step.
 
     Parameters
@@ -661,7 +677,12 @@ def acceptance(h_old, h_new):
     return float(-h_new + h_old)
 
 # Adaptation p.15 No-U-Turn samplers Algo 5
-def adaptation(rho, t, step_size_init, H_t, eps_bar, desired_accept_rate=0.8):
+def adaptation(rho,
+               t,
+               step_size_init,
+               H_t,
+               eps_bar,
+               desired_accept_rate=0.8):
     """No-U-Turn sampler adaptation of the step size. This follows Algo 5, p. 15 from Hoffman and Gelman 2011.
 
     Parameters
@@ -695,12 +716,12 @@ def adaptation(rho, t, step_size_init, H_t, eps_bar, desired_accept_rate=0.8):
     if util.has_nan_or_inf(torch.tensor([rho])):
         alpha = 0 # Acceptance rate is zero if nan.
     else:
-        alpha = min(1.,float(torch.exp(torch.FloatTensor([rho]))))
-    mu = float(torch.log(10*torch.FloatTensor([step_size_init])))
+        alpha = min(1., float(torch.exp(torch.FloatTensor([rho]))))
+    mu = float(torch.log(10 * torch.FloatTensor([step_size_init])))
     gamma = 0.05
     t0 = 10
     kappa = 0.75
-    H_t = (1-(1/(t+t0)))*H_t + (1/(t+t0))*(desired_accept_rate - alpha)
+    H_t = (1-(1/(t+t0)))*H_t + (1 /(t + t0)) * (desired_accept_rate - alpha)
     x_new = mu - (t**0.5)/gamma * H_t
     step_size = float(torch.exp(torch.FloatTensor([x_new])))
     x_new_bar = t**-kappa * x_new +  (1 - t**-kappa) * torch.log(torch.FloatTensor([eps_bar]))
@@ -746,7 +767,12 @@ def rm_hamiltonian(params, momentum, log_prob_func, jitter, normalizing_const, s
     ndim = params.nelement()
     pi_term = ndim * torch.log(2.*torch.tensor(pi))
 
-    fish, abs_eigenvalues = fisher(params, log_prob_func, jitter=jitter, normalizing_const=normalizing_const, softabs_const=softabs_const, metric=metric)
+    fish, abs_eigenvalues = fisher(params,
+                                   log_prob_func,
+                                   jitter=jitter,
+                                   normalizing_const=normalizing_const,
+                                   softabs_const=softabs_const,
+                                   metric=metric)
 
     if abs_eigenvalues is not None:
         if util.has_nan_or_inf(fish) or util.has_nan_or_inf(abs_eigenvalues):
@@ -822,18 +848,19 @@ def hamiltonian(params, momentum, log_prob_func, jitter=0.01, normalizing_const=
         elif type(log_prob_func) is list: # I.e. splitting!
             log_prob = 0
             for split_log_prob_func in log_prob_func:
-                # Don't propogate gradients for saving  GPU memory usage (Sampler.HMC code does not explicitly calculate dH/dp etc...)
+                # Don't propogate gradients for saving  GPU memory usage 
+                # (Sampler.HMC code does not explicitly calculate dH/dp etc...)
                 with torch.no_grad():
                     log_prob = log_prob + split_log_prob_func(params)
 
                     if util.has_nan_or_inf(log_prob):
                         print('Invalid log_prob: {}, params: {}'.format(log_prob, params))
                         raise util.LogProbError()
-
-
-        potential = -log_prob#/normalizing_const
+        # normalizing_const
+        potential = -log_prob
         if inv_mass is None:
-            kinetic = 0.5 * torch.dot(momentum, momentum)#/normalizing_const
+            # normalizing_const
+            kinetic = 0.5 * torch.dot(momentum, momentum)
         else:
             if type(inv_mass) is list:
                 i = 0
@@ -879,7 +906,6 @@ def hamiltonian(params, momentum, log_prob_func, jitter=0.01, normalizing_const=
         raise NotImplementedError()
     # if not tup:
     return hamiltonian
-
 
 
 def sample(log_prob_func,
@@ -1003,11 +1029,11 @@ def sample(log_prob_func,
             mass = []
             for block in inv_mass:
                 mass.append(torch.inverse(block))
-        #Assum G is diag here so 1/Mass = G inverse
+        # Assum G is diag here so 1/Mass = G inverse
         elif len(inv_mass.shape) == 2:
             mass = torch.inverse(inv_mass)
         elif len(inv_mass.shape) == 1:
-            mass = 1/inv_mass
+            mass = 1 / inv_mass
 
     params = params_init.clone().requires_grad_()
     param_burn_prev = params_init.clone()
@@ -1290,23 +1316,24 @@ def define_model_log_prob(model,
 
         # get the prediction for BNN model
         output = fmodel(x_device, params=params_unflattened)
-
+        
         # get loss function for infernece
         if model_loss == 'binary_class_linear_output':
             crit = nn.BCEWithLogitsLoss(reduction='sum')
-            ll = - tau_out *(crit(output, y_device))
+            ll = - tau_out * (crit(output, y_device))
         elif model_loss == 'multi_class_linear_output':
             # crit = nn.MSELoss(reduction='mean')
             crit = nn.CrossEntropyLoss(reduction='sum')
             # crit = nn.BCEWithLogitsLoss(reduction='sum')
-            ll = - tau_out *(crit(output, y_device.long().view(-1)))
+            ll = - tau_out * (crit(output, y_device.long().view(-1)))
             # ll = - tau_out *(torch.nn.functional.nll_loss(output, y.long().view(-1)))
         elif model_loss == 'multi_class_log_softmax_output':
-            ll = - tau_out *(torch.nn.functional.nll_loss(output, y_device.long().view(-1)))
+            ll = - tau_out * (torch.nn.functional.nll_loss(output, y_device.long().view(-1)))
         elif model_loss == 'regression':
             # crit = nn.MSELoss(reduction='sum')
-            ll = - 0.5 * tau_out * ((output - y_device) ** 2).sum(0)#sum(0)
-
+            ll = - 0.5 * tau_out * ((output - y_device) ** 2).sum(0)
+        elif model_loss == 'nll':
+            ll = - 0.5 * ((output - y_device) ** 2 / params[0]**2).sum(0)
         elif callable(model_loss):
             # Assume defined custom log-likelihood.
             ll = - model_loss(output, y_device).sum(0)
@@ -1375,7 +1402,18 @@ def define_split_model_log_prob(model, model_loss, train_loader, num_splits, par
     for batch_idx, (data, target) in enumerate(train_loader):
         if batch_idx > num_splits - 1:
             break
-        log_prob_func = define_model_log_prob(model, model_loss, data.clone().to('cpu'), target.clone().to('cpu'), params_flattened_list, params_shape_list, tau_list, tau_out, normalizing_const=normalizing_const, prior_scale = num_splits, predict = predict, device = device)
+        log_prob_func = define_model_log_prob(model, 
+                                              model_loss, 
+                                              data.clone().to('cpu'), 
+                                              target.clone().to('cpu'), 
+                                              params_flattened_list, 
+                                              params_shape_list, 
+                                              tau_list, 
+                                              tau_out, 
+                                              normalizing_const=normalizing_const, 
+                                              prior_scale = num_splits, 
+                                              predict = predict, 
+                                              device = device)
         log_prob_list.append(log_prob_func)
     if not verbose:
         print('Number of splits: ',len(log_prob_list), ' , each of batch size ', train_loader.batch_size, '\n')
@@ -1408,7 +1446,9 @@ def sample_model(model,
                  store_on_GPU = True, 
                  desired_accept_rate=0.8, 
                  verbose = False):
-    """Sample weights from a NN model to perform inference. This function builds a log_prob_func from the torch.nn.Module and passes it to `hamiltorch.sample`.
+    """Sample weights from a NN model to perform inference. 
+    This function builds a log_prob_func from the torch.nn.Module and
+    passes it to `hamiltorch.sample`.
 
     Parameters
     ----------
